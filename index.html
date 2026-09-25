@@ -936,7 +936,7 @@
             <div class="form-group"><label>Enrollment Number</label>
               <div style="display:flex;gap:8px;">
                 <input type="text" id="s-enrollment-no" placeholder="e.g. B005" style="flex:1;" oninput="this.value=this.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
-                <button class="btn btn-outline btn-sm" type="button" onclick="fillSuggestedEnrollmentNo('s-enrollment-no')" title="Auto-suggest next number (B-series first)">🔁 Suggest</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="fillSuggestedEnrollmentNo('s-enrollment-no')" title="Auto-suggest next enrollment number">🔁 Suggest</button>
               </div>
             </div>
             <div class="form-group"><label>Application Number</label><input type="text" id="s-application-no" placeholder="Enter application number"></div>
@@ -1865,7 +1865,7 @@
         <div class="form-group"><label>Enrollment Number</label>
           <div style="display:flex;gap:8px;">
             <input type="text" id="qs-student-id" placeholder="e.g. B005" style="flex:1;" oninput="this.value=this.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
-            <button class="btn btn-outline btn-sm" type="button" onclick="fillSuggestedEnrollmentNo('qs-student-id')" title="Auto-suggest next number (B-series first)">🔁 Suggest</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="fillSuggestedEnrollmentNo('qs-student-id')" title="Auto-suggest next enrollment number">🔁 Suggest</button>
           </div>
         </div>
         <div class="form-group"><label>Application Number</label><input type="text" id="qs-application-no" placeholder="Enter application number"></div>
@@ -7965,7 +7965,15 @@ function refreshPage(id) {
     if (_stp) _stp.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text2);"><div style="font-size:32px;margin-bottom:12px;">&#x23F3;</div>Loading tracking data...</div>';
     renderStudentTracking();
   }
-  else if(id==='add-student') { /* static form page, no render needed */ }
+  else if(id==='add-student') {
+    try {
+      const enrEl = document.getElementById('s-enrollment-no');
+      if (enrEl && !enrEl.value.trim()) {
+        const suggested = suggestNextEnrollmentNumber();
+        if (suggested) enrEl.value = suggested;
+      }
+    } catch(e){}
+  }
   else if(id==='data-import') renderImportPage();
   else if(id==='data-repair') renderDataRepairPage();
 }
@@ -9939,49 +9947,155 @@ function getStudentIdSortValue(student) {
   return seriesKey + '|' + numStr + '|' + dateKey + '|' + rawId.toUpperCase();
 }
 
-// Suggest the NEXT enrollment number — newest month series first (AUG before JUL),
-// then highest single-letter series (B before A), continuing its numbering.
-function suggestNextEnrollmentNumber() {
+// Suggest the NEXT enrollment number — intelligently detects the school's active
+// numbering series (e.g. B005 → B006, AUG001 → AUG002, FG101 → FG102, 1001 → 1002).
+// Prioritises the active/recent series, supports user-typed series, and defaults to B001 if no records exist.
+function suggestNextEnrollmentNumber(preferredInput) {
   try {
-    if (!currentSchoolId) return '';
-    const students = (data.students || []).filter(function(s){ return !s.schoolId || s.schoolId === currentSchoolId; });
-    const FG_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    const parsed = [];
-    (students || []).forEach(function(s){
-      const id = String(s.studentId || s.enrollmentNo || s.enrollmentNumber || '').trim();
-      if (!id) return;
-      const m = id.match(/([A-Za-z]+)[-_]?(\d+)\s*$/);
-      if (!m) return;
-      const prefix = m[1].toUpperCase();
-      let key = '';
-      let label = prefix;
-      const mi = FG_MONTHS.indexOf(prefix);
-      if (mi !== -1) key = 'M' + String(mi + 1).padStart(2, '0');       // AUG-001 → M08
-      else if (prefix.length === 1) key = 'L' + prefix;                  // B-005 → LB
-      else return;                                                       // FG-101 → skip
-      parsed.push({ key: key, label: label, num: parseInt(m[2], 10), width: m[2].length });
+    const schoolId = (typeof currentSchoolId !== 'undefined' && currentSchoolId) ? currentSchoolId : ((typeof userSchools !== 'undefined' && userSchools && userSchools[0]) ? userSchools[0].id : null);
+    const students = (data.students || []).filter(function(s) {
+      return !schoolId || !s.schoolId || s.schoolId === schoolId;
     });
-    if (parsed.length === 0) return '';
-    // Newest month first (AUG before JUL), then highest letter (B before A)
-    parsed.sort(function(a, b){ return b.key.localeCompare(a.key); });
-    const top = parsed[0];
-    const inSeries = parsed.filter(function(p){ return p.key === top.key; });
-    const maxNum = Math.max.apply(null, inSeries.map(function(p){ return p.num; }));
-    const width = Math.max.apply(null, inSeries.map(function(p){ return p.width; }));
-    // No hyphen — enrollment numbers are letters + digits only (e.g. B005)
-    return top.label + String(maxNum + 1).padStart(width, '0');
-  } catch(e) { console.warn('suggestNextEnrollmentNumber failed:', e.message); return ''; }
+
+    const FG_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const now = new Date();
+    const curMonthName = FG_MONTHS[now.getMonth()]; // e.g. 'SEP'
+
+    // If user has typed a preferred prefix in the input (e.g. 'B', 'A', 'SEP', 'FG')
+    let userPref = '';
+    if (preferredInput && typeof preferredInput === 'string') {
+      const cleanPref = preferredInput.trim().toUpperCase().replace(/[^A-Za-z0-9]/g, '');
+      const pm = cleanPref.match(/^([A-Za-z]+)/);
+      if (pm) userPref = pm[1];
+    }
+
+    const groups = {}; // prefix -> { prefix, maxNum, width, latestDate, latestIdx, count }
+
+    (students || []).forEach(function(s, idx) {
+      // Find candidate enrollment number string
+      const raw = String(s.studentId || s.enrollmentNo || s.enrollmentNumber || '').trim();
+      if (!raw) return;
+
+      // Ignore Firebase random document IDs, temporary optimistic IDs, and fallback display hex strings
+      if (s.firebaseId && String(s.firebaseId) === raw) return;
+      if (raw.indexOf('temp_') === 0) return;
+      if (raw.length >= 20 && /^[A-Za-z0-9]{20,}$/.test(raw)) return;
+      if (/^FG-[A-F0-9]{6}$/i.test(raw)) return;
+
+      // Match prefix and number: e.g. "B005", "B-005", "AUG-001", "FG101", "1001"
+      const m = raw.match(/^(.*?)[-_\s/]?(\d+)$/);
+      if (!m) return;
+
+      const rawPrefix = m[1].trim();
+      const cleanPrefix = rawPrefix.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const num = parseInt(m[2], 10);
+      if (isNaN(num)) return;
+      const width = m[2].length;
+
+      // Determine date for recency scoring
+      let dateStr = '';
+      try {
+        const enr = String(s.enrolled || s.createdAt || '');
+        const dm = enr.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (dm) dateStr = dm[1] + dm[2] + dm[3];
+      } catch(e) {}
+
+      if (!groups[cleanPrefix]) {
+        groups[cleanPrefix] = {
+          prefix: cleanPrefix,
+          maxNum: num,
+          width: width,
+          latestDate: dateStr,
+          latestIdx: idx,
+          count: 1
+        };
+      } else {
+        const g = groups[cleanPrefix];
+        if (num > g.maxNum) g.maxNum = num;
+        if (width > g.width) g.width = width;
+        if (dateStr && dateStr >= g.latestDate) g.latestDate = dateStr;
+        g.latestIdx = Math.max(g.latestIdx, idx);
+        g.count++;
+      }
+    });
+
+    // 1) If user explicitly requested a prefix (e.g. typed 'A', 'B', 'C', 'SEP')
+    if (userPref) {
+      if (groups[userPref]) {
+        const g = groups[userPref];
+        const pad = Math.max(g.width, 3);
+        return g.prefix + String(g.maxNum + 1).padStart(pad, '0');
+      } else {
+        // Brand new prefix requested by user
+        return userPref + '001';
+      }
+    }
+
+    const groupList = Object.values(groups);
+
+    // 2) If no valid enrollment numbers found in the school, default to 'B001'
+    if (groupList.length === 0) {
+      return 'B001';
+    }
+
+    // 3) Score and rank the groups to find the current active series
+    groupList.sort(function(a, b) {
+      const score = function(g) {
+        let sc = 0;
+        // Recency score (newest enrollment date gets highest weight)
+        if (g.latestDate) {
+          sc += parseInt(g.latestDate, 10) * 1000;
+        } else {
+          sc += g.latestIdx * 10;
+        }
+
+        const p = g.prefix;
+        // Month series handling
+        const mi = FG_MONTHS.indexOf(p);
+        const curMi = FG_MONTHS.indexOf(curMonthName);
+        if (mi !== -1) {
+          if (mi === curMi) sc += 50000000; // current month series gets large boost
+          else if (mi === (curMi - 1 + 12) % 12) sc += 20000000; // previous month
+        } else if (p.length === 1 && p >= 'A' && p <= 'Z') {
+          // Single-letter series: 'B' > 'A', 'C' > 'B'
+          sc += (p.charCodeAt(0) - 65 + 1) * 5000000;
+        }
+        return sc;
+      };
+      return score(b) - score(a);
+    });
+
+    const top = groupList[0];
+
+    // If top series is a month series from a past month and current month has not started yet
+    if (FG_MONTHS.indexOf(top.prefix) !== -1) {
+      const topMi = FG_MONTHS.indexOf(top.prefix);
+      const curMi = FG_MONTHS.indexOf(curMonthName);
+      if (topMi !== curMi && !groups[curMonthName]) {
+        const pad = Math.max(top.width, 3);
+        return curMonthName + String(1).padStart(pad, '0');
+      }
+    }
+
+    const pad = Math.max(top.width, 3);
+    return top.prefix + String(top.maxNum + 1).padStart(pad, '0');
+  } catch(e) {
+    console.warn('suggestNextEnrollmentNumber failed:', e.message);
+    return 'B001';
+  }
 }
 
 function fillSuggestedEnrollmentNo(inputId) {
   const el = document.getElementById(inputId);
   if (!el) return;
-  const suggested = suggestNextEnrollmentNumber();
+  const currentVal = el.value ? el.value.trim() : '';
+  const suggested = suggestNextEnrollmentNumber(currentVal);
   if (suggested) {
     el.value = suggested;
-    showToast('🔁 Suggested: ' + suggested + ' (highest series first)');
+    showToast('🔁 Suggested: ' + suggested);
   } else {
-    showToast('⚠ Could not suggest — no existing series found. Type it manually.');
+    el.value = 'B001';
+    showToast('🔁 Suggested: B001');
   }
 }
 
@@ -10565,7 +10679,13 @@ async function enrollStudent() {
 
 function clearEnrollForm() {
   document.getElementById('s-name').value = '';
-  const enr = document.getElementById('s-enrollment-no'); if (enr) enr.value = '';
+  const enr = document.getElementById('s-enrollment-no');
+  if (enr) {
+    try {
+      const nextSug = suggestNextEnrollmentNumber();
+      enr.value = nextSug || '';
+    } catch(e) { enr.value = ''; }
+  }
   const app = document.getElementById('s-application-no'); if (app) app.value = '';
   document.getElementById('s-dob').value = '';
   document.getElementById('s-father-name').value = '';
@@ -25299,5 +25419,5 @@ function populateFormFromStudentId(value) {
   <div id="fg-wa-panel-list" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:8px;"></div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40aeeb0bc6d7ef9',t:'MTc5MDM0ODc4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
