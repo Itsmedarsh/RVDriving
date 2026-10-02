@@ -414,6 +414,123 @@
 </style>
 </head>
 <body>
+<script>
+/* ============================================================
+   📱 PUBLIC STUDENT ENROLLMENT FORM (no login needed)
+   Opened from the link the school sends on WhatsApp:
+   ...?fgform=1&school=<name>&to=<school whatsapp digits>
+   The student fills personal details → presses Submit →
+   WhatsApp opens back to the school with the details + an
+   FG-FORM code that the app reads to AUTO-FILL the enrollment.
+   ============================================================ */
+(function(){
+  try {
+    var p = new URLSearchParams(window.location.search || '');
+    if (p.get('fgform') !== '1') return;
+    window.__FG_PUBLIC_FORM = true;
+    var schoolName = p.get('school') || 'Driving School';
+    var toNum = String(p.get('to') || '').replace(/\D/g, '');
+    function esc(t){ return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    window.__fgPublicFormSubmit = function(){
+      function v(id){ var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+      var f = {
+        v: 1,
+        name: v('pf-name'),
+        father: v('pf-father'),
+        dob: v('pf-dob'),
+        gender: v('pf-gender'),
+        blood: v('pf-blood'),
+        phone: v('pf-phone'),
+        email: v('pf-email'),
+        address: v('pf-address'),
+        aadhaar: v('pf-aadhaar'),
+        emergency: v('pf-emergency'),
+        ts: new Date().toISOString()
+      };
+      var errEl = document.getElementById('pf-error');
+      var err = '';
+      if (!f.name) err = 'Please enter your full name';
+      else if (!f.phone || f.phone.replace(/\D/g,'').length < 10) err = 'Please enter a valid 10-digit phone number';
+      else if (!f.dob) err = 'Please select your date of birth';
+      if (err) { if (errEl) { errEl.textContent = '⚠ ' + err; errEl.style.display = 'block'; } return; }
+      if (errEl) errEl.style.display = 'none';
+
+      var code = '';
+      try { code = btoa(unescape(encodeURIComponent(JSON.stringify(f)))); } catch(e) { code = ''; }
+      var lines = [];
+      lines.push('📋 *Student Enrollment Form — ' + schoolName + '*');
+      lines.push('');
+      lines.push('• Name: ' + f.name);
+      if (f.father) lines.push('• Father/Guardian: ' + f.father);
+      lines.push('• Date of Birth: ' + f.dob);
+      if (f.gender) lines.push('• Gender: ' + f.gender);
+      if (f.blood) lines.push('• Blood Group: ' + f.blood);
+      lines.push('• Phone: ' + f.phone);
+      if (f.email) lines.push('• Email: ' + f.email);
+      if (f.address) lines.push('• Address: ' + f.address);
+      if (f.aadhaar) lines.push('• Aadhaar: ' + f.aadhaar);
+      if (f.emergency) lines.push('• Emergency Contact: ' + f.emergency);
+      lines.push('');
+      if (code) {
+        lines.push('FG-FORM:' + code);
+        lines.push('');
+        lines.push('(Please send this message as it is — do not edit. The school system reads it automatically.)');
+      }
+      var msg = lines.join('\n');
+      var url = 'https://wa.me/' + (toNum || '') + '?text=' + encodeURIComponent(msg);
+      window.__fgPublicFormMsg = msg;
+      try { window.open(url, '_blank'); } catch(e) { window.location.href = url; }
+      var doneEl = document.getElementById('pf-done');
+      if (doneEl) doneEl.style.display = 'block';
+    };
+
+    window.__fgPublicFormCopy = function(){
+      var msg = window.__fgPublicFormMsg || '';
+      if (!msg) return;
+      try { navigator.clipboard.writeText(msg).then(function(){ alert('✅ Details copied — paste them in WhatsApp to the school.'); }, function(){ prompt('Copy this message and send it to the school on WhatsApp:', msg); }); }
+      catch(e){ prompt('Copy this message and send it to the school on WhatsApp:', msg); }
+    };
+
+    document.addEventListener('DOMContentLoaded', function(){
+      document.title = 'Student Details Form — ' + schoolName;
+      var fld = function(label, inner){ return '<div style="margin-bottom:14px;"><label style="display:block;font-size:13px;font-weight:600;color:#334155;margin-bottom:5px;">' + label + '</label>' + inner + '</div>'; };
+      var inp = 'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;background:#fff;"';
+      document.body.innerHTML =
+        '<div style="min-height:100vh;background:#f1f5f9;padding:18px 12px 40px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">' +
+          '<div style="max-width:520px;margin:0 auto;">' +
+            '<div style="background:#1d4ed8;color:#fff;border-radius:14px 14px 0 0;padding:20px 18px;">' +
+              '<div style="font-size:13px;opacity:.85;">🚗 ' + esc(schoolName) + '</div>' +
+              '<div style="font-size:21px;font-weight:800;margin-top:4px;">📋 Student Details Form</div>' +
+              '<div style="font-size:13px;opacity:.9;margin-top:6px;">Fill in your personal details for enrollment — it takes 2 minutes. After submitting, your details go to the school on WhatsApp.</div>' +
+            '</div>' +
+            '<div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 14px 14px;padding:20px 18px;">' +
+              fld('Full Name *', '<input type="text" id="pf-name" placeholder="Your full name (as per Aadhaar)" ' + inp + '>') +
+              fld('Father&#39;s / Guardian&#39;s Name', '<input type="text" id="pf-father" placeholder="Father&#39;s or guardian&#39;s full name" ' + inp + '>') +
+              fld('Date of Birth *', '<input type="date" id="pf-dob" ' + inp + '>') +
+              '<div style="display:flex;gap:10px;">' +
+                '<div style="flex:1;">' + fld('Gender', '<select id="pf-gender" ' + inp + '><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select>') + '</div>' +
+                '<div style="flex:1;">' + fld('Blood Group', '<select id="pf-blood" ' + inp + '><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select>') + '</div>' +
+              '</div>' +
+              fld('Phone Number *', '<input type="tel" id="pf-phone" placeholder="10-digit mobile number" ' + inp + '>') +
+              fld('Email Address', '<input type="email" id="pf-email" placeholder="you@email.com (optional)" ' + inp + '>') +
+              fld('Full Address', '<textarea id="pf-address" placeholder="House no, street, area, city, PIN code" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;background:#fff;min-height:80px;"></textarea>') +
+              fld('Aadhaar Number', '<input type="text" id="pf-aadhaar" placeholder="XXXX XXXX XXXX (optional)" maxlength="14" ' + inp + '>') +
+              fld('Emergency Contact Number', '<input type="tel" id="pf-emergency" placeholder="Alternate / emergency phone (optional)" ' + inp + '>') +
+              '<div id="pf-error" style="display:none;background:#fee2e2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px;"></div>' +
+              '<button onclick="__fgPublicFormSubmit()" style="width:100%;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;">✅ Submit — Send on WhatsApp</button>' +
+              '<div id="pf-done" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:12px;font-size:13px;margin-top:12px;line-height:1.7;">' +
+                '💬 WhatsApp has opened with your details — just press <strong>Send</strong> there.<br>' +
+                'If WhatsApp did not open, <a href="javascript:__fgPublicFormCopy()" style="color:#1d4ed8;font-weight:700;">tap here to copy your details</a> and send them to the school manually.' +
+              '</div>' +
+              '<div style="font-size:11px;color:#94a3b8;margin-top:14px;text-align:center;">Your details are sent directly to ' + esc(schoolName) + ' on WhatsApp. Nothing is stored on this page.</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    });
+  } catch(e) { console.warn('Public form init failed:', e && e.message); }
+})();
+</script>
 
 <!-- Offline Status Indicator -->
 <div data-status="offline-indicator" style="
@@ -931,6 +1048,16 @@
         </div>
         <div class="card">
           <div class="card-title">Student Details</div>
+          <!-- 📱 SELF-FILL FORM — student fills personal details, owner fills the rest -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+            <div style="font-weight:700;font-size:13px;color:#15803d;margin-bottom:4px;">📱 Let the student fill their own details</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Send the form link on WhatsApp — the student fills name, DOB, address etc. and it comes back on WhatsApp. Then click <strong>Import Response</strong> to auto-fill the personal details below. You fill the course &amp; fee details.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-accent btn-sm" type="button" onclick="fgSendEnrollFormWhatsApp()">📱 Send Form on WhatsApp</button>
+              <button class="btn btn-outline btn-sm" type="button" onclick="fgCopyEnrollFormLink()">🔗 Copy Form Link</button>
+              <button class="btn btn-success btn-sm" type="button" onclick="openImportEnrollForm('s')">📥 Import Response (Auto-Fill)</button>
+            </div>
+          </div>
           <div class="form-grid">
             <div class="form-group"><label>Full Name *</label><input type="text" id="s-name" placeholder="Enter full name"></div>
             <div class="form-group"><label>Enrollment Number</label>
@@ -1860,6 +1987,16 @@
     </div>
     <!-- Personal Info Tab -->
     <div id="stab-personal">
+      <!-- 📱 SELF-FILL FORM — student fills personal details, owner fills the rest -->
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:13px;color:#15803d;margin-bottom:4px;">📱 Let the student fill their own details</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Send the form link on WhatsApp — the student fills name, DOB, address etc. and it comes back on WhatsApp. Then click <strong>Import Response</strong> to auto-fill this page. You only fill the Course &amp; Fee tab.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-accent btn-sm" type="button" onclick="fgSendEnrollFormWhatsApp()">📱 Send Form on WhatsApp</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="fgCopyEnrollFormLink()">🔗 Copy Form Link</button>
+          <button class="btn btn-success btn-sm" type="button" onclick="openImportEnrollForm('qs')">📥 Import Response (Auto-Fill)</button>
+        </div>
+      </div>
       <div class="form-grid">
         <div class="form-group"><label>Full Name *</label><input type="text" id="qs-name" placeholder="Student full name"></div>
         <div class="form-group"><label>Enrollment Number</label>
@@ -2261,6 +2398,28 @@
     <div style="margin-top:20px;display:flex;gap:10px;border-top:1px solid var(--border);padding-top:16px;">
       <button class="btn btn-accent" onclick="saveRescheduleDLTest()" style="flex:1;">&#x1F504; Reschedule &amp; Send WhatsApp</button>
       <button class="btn btn-outline" onclick="closeModal('modal-reschedule-dl')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- 📥 IMPORT STUDENT FORM RESPONSE — paste the WhatsApp message to auto-fill enrollment -->
+<div class="modal-overlay" id="modal-import-enroll-form">
+  <div class="modal" style="width:560px;max-width:96vw;">
+    <div class="modal-header">
+      <h3>📥 Import Student Form Response</h3>
+      <button class="modal-close" onclick="closeModal('modal-import-enroll-form')">✕</button>
+    </div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#1d4ed8;line-height:1.7;">
+      &#x2139;&#xFE0F; Open WhatsApp → long-press the student's form message → <strong>Copy</strong> → paste it below.<br>
+      The personal details will be filled in automatically — you only complete the course &amp; fee details.
+    </div>
+    <div class="form-group">
+      <label>Paste the student's WhatsApp message (it contains the FG-FORM code)</label>
+      <textarea id="import-form-text" style="min-height:150px;width:100%;box-sizing:border-box;" placeholder="Paste the full message here..."></textarea>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;border-top:1px solid var(--border);padding-top:16px;">
+      <button class="btn btn-accent" onclick="fgImportEnrollFormSubmit()" style="flex:1;">✅ Auto-Fill Details</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-import-enroll-form')">Cancel</button>
     </div>
   </div>
 </div>
@@ -4536,6 +4695,7 @@ let _manualLoginInProgress = false;
 let _loginTimeMemberSchools = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+  if (window.__FG_PUBLIC_FORM) return; // 📱 public student form mode — skip app boot
   const ok = initFirebase();
   initEmailJS();
   registerFirebaseMessagingServiceWorker();
@@ -10288,6 +10448,115 @@ let _fgStudentFilterTimer = null;
 function filterStudents(val, status='') {
   clearTimeout(_fgStudentFilterTimer);
   _fgStudentFilterTimer = setTimeout(function(){ renderStudentsTable(val, status); }, 180);
+}
+
+// ============================================================
+// 📱 SELF-FILL ENROLLMENT FORM
+// Owner sends a form link on WhatsApp → student fills personal
+// details → the reply (with FG-FORM code) is pasted/imported →
+// the enrollment form AUTO-FILLS. Owner fills the rest.
+// ============================================================
+function _fgEnrollFormSchool() {
+  var sch = null;
+  try { sch = ((typeof userSchools !== 'undefined' && userSchools) || []).find(function(x){ return x.id === currentSchoolId; }) || null; } catch(e){}
+  return {
+    name: (sch && sch.name) || 'Our Driving School',
+    phone: (sch && sch.phone) || ''
+  };
+}
+
+function fgBuildEnrollFormLink() {
+  var sch = _fgEnrollFormSchool();
+  var digits = '';
+  try { digits = FG_WA.normalizePhone(sch.phone) || ''; } catch(e){ digits = String(sch.phone || '').replace(/\D/g, ''); }
+  var base = '';
+  try {
+    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') base = window.location.origin + window.location.pathname;
+  } catch(e){}
+  if (!base) base = String(window.location.href || '').split('?')[0];
+  return base + '?fgform=1&school=' + encodeURIComponent(sch.name) + (digits ? '&to=' + digits : '');
+}
+
+function fgSendEnrollFormWhatsApp() {
+  var phone = prompt("📱 Enter the student's WhatsApp number (10-digit):", '');
+  if (phone === null) return;
+  var num = '';
+  try { num = FG_WA.normalizePhone(phone) || ''; } catch(e){ num = String(phone).replace(/\D/g, ''); }
+  if (!num) { alert('⚠ Please enter a valid WhatsApp number'); return; }
+  try { FG_WA.prepare(); } catch(e){}
+  var sch = _fgEnrollFormSchool();
+  var link = fgBuildEnrollFormLink();
+  var msg = '👋 Welcome to *' + sch.name + '*!\n\n' +
+    'To complete your enrollment, please fill in your personal details using this form:\n\n' + link + '\n\n' +
+    '📝 It takes only 2 minutes. After filling, press *Submit* — your details will reach us on WhatsApp automatically. Thank you! 🚗';
+  try {
+    var opened = FG_WA.openWa(num, msg);
+    if (opened) showToast('💬 Opening WhatsApp with the enrollment form link...');
+  } catch(e) {
+    try { window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(msg), '_blank'); } catch(e2){}
+  }
+}
+
+function fgCopyEnrollFormLink() {
+  var link = fgBuildEnrollFormLink();
+  function done(){ showToast('🔗 Form link copied — share it with the student'); }
+  try { navigator.clipboard.writeText(link).then(done, function(){ prompt('Copy this form link:', link); }); }
+  catch(e){ prompt('Copy this form link:', link); }
+}
+
+function openImportEnrollForm(target) {
+  window.__fgImportTarget = target || 'qs';
+  var ta = document.getElementById('import-form-text');
+  if (ta) ta.value = '';
+  openModal('modal-import-enroll-form');
+  // Convenience: if the copied WhatsApp message is already on the clipboard, paste it automatically
+  try {
+    navigator.clipboard.readText().then(function(t){
+      if (t && t.indexOf('FG-FORM:') !== -1 && ta && !ta.value) { ta.value = t; }
+    }).catch(function(){});
+  } catch(e){}
+}
+
+function fgImportEnrollFormSubmit() {
+  var ta = document.getElementById('import-form-text');
+  var text = ta ? String(ta.value || '') : '';
+  var m = text.match(/FG-FORM:\s*([A-Za-z0-9+\/=]+)/);
+  if (!m) { alert('⚠ No form code found.\n\nPlease paste the FULL WhatsApp message sent by the student — it contains a line starting with "FG-FORM:".'); return; }
+  var f = null;
+  try { f = JSON.parse(decodeURIComponent(escape(atob(m[1])))); } catch(e) { f = null; }
+  if (!f || typeof f !== 'object' || !f.name) { alert('⚠ The form code could not be read. Ask the student to resend the message without editing it.'); return; }
+
+  var t = window.__fgImportTarget === 's' ? 's' : 'qs';
+
+  // If importing into the Add Student modal, make sure it is OPEN first
+  // (opening it resets the fields, so this must happen BEFORE filling)
+  if (t === 'qs') {
+    try {
+      var modal = document.getElementById('modal-add-student');
+      if (modal && !modal.classList.contains('open')) openAddStudentModal();
+      var tabs = document.querySelectorAll('#modal-add-student .tab');
+      if (tabs && tabs[0] && typeof switchStudentTab === 'function') switchStudentTab('personal', tabs[0]);
+    } catch(e){}
+  }
+
+  var map = (t === 'qs') ? {
+    name:'qs-name', father:'qs-father-name', dob:'qs-dob', gender:'qs-gender', blood:'qs-blood',
+    phone:'qs-phone', email:'qs-email', address:'qs-address', aadhaar:'qs-aadhaar', emergency:'qs-emergency'
+  } : {
+    name:'s-name', father:'s-father-name', dob:'s-dob',
+    phone:'s-phone', email:'s-email', address:'s-address', aadhaar:'s-aadhaar', emergency:'s-emergency'
+  };
+  var filled = 0;
+  Object.keys(map).forEach(function(k){
+    var el = document.getElementById(map[k]);
+    if (el && f[k]) { el.value = f[k]; filled++; }
+  });
+  // Default the enrollment date to today if empty
+  var enr = document.getElementById(t === 'qs' ? 'qs-enrolled' : 's-enroll');
+  if (enr && !enr.value) enr.value = new Date().toISOString().split('T')[0];
+
+  closeModal('modal-import-enroll-form');
+  showToast('✅ ' + filled + ' detail' + (filled === 1 ? '' : 's') + ' auto-filled from ' + (f.name || 'the student') + "'s form — now fill the course & fee details");
 }
 
 function openAddStudentModal() {
@@ -17226,7 +17495,9 @@ function focusAgentInput(id) {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
+  if (window.__FG_PUBLIC_FORM) return; // 📱 public student form mode
+  const dd = document.getElementById('dash-date');
+  if (dd) dd.textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
 });
 
 // ============================================================
@@ -22768,7 +23039,9 @@ async function loadOtherServices(force) {
 // INIT PATCHES
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
+  if (window.__FG_PUBLIC_FORM) return; // 📱 public student form mode
+  const dd2 = document.getElementById('dash-date');
+  if (dd2) dd2.textContent = new Date().toLocaleDateString('en-IN',{weekday:'short',year:'numeric',month:'short',day:'numeric'});
   // Schedule daily notification for owner
   if (currentRole === 'owner') {
     scheduleDailyNotification();
@@ -25760,5 +26033,5 @@ function populateFormFromStudentId(value) {
   <div id="fg-wa-panel-list" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:8px;"></div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40aeeb0bc6d7ef9',t:'MTc5MDM0ODc4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4407abc5fbe384f',t:'MTc5MDkxMDI2Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40aeeb0bc6d7ef9',t:'MTc5MDM0ODc4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a444759d5d5199d8',t:'MTc5MDk1MTk5Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
