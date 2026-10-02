@@ -2244,6 +2244,27 @@
   </div>
 </div>
 
+<!-- 🔄 RESCHEDULE DL TEST (after Fail / Absent) — new slot + WhatsApp -->
+<div class="modal-overlay" id="modal-reschedule-dl">
+  <div class="modal" style="width:520px;max-width:96vw;">
+    <div class="modal-header">
+      <h3>&#x1F504; Reschedule DL Test</h3>
+      <button class="modal-close" onclick="closeModal('modal-reschedule-dl')">✕</button>
+    </div>
+    <div id="redl-info" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#92400e;line-height:1.7;"></div>
+    <div class="form-grid">
+      <div class="form-group"><label>New Test Date *</label><input type="date" id="redl-date"></div>
+      <div class="form-group"><label>New Test Time</label><input type="time" id="redl-time" value="09:00"></div>
+      <div class="form-group full"><label>RTO Office / Location *</label><input type="text" id="redl-rto" placeholder="e.g. RTO Chennai, Anna Salai"></div>
+      <div class="form-group full"><label>Notes (optional)</label><input type="text" id="redl-notes" placeholder="e.g. Retest — carry all original documents"></div>
+    </div>
+    <div style="margin-top:20px;display:flex;gap:10px;border-top:1px solid var(--border);padding-top:16px;">
+      <button class="btn btn-accent" onclick="saveRescheduleDLTest()" style="flex:1;">&#x1F504; Reschedule &amp; Send WhatsApp</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-reschedule-dl')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-add-fuel">
   <div class="modal" style="width:580px;">
     <div class="modal-header"><h3>⛽ Log Fuel Fill</h3><button class="modal-close" onclick="closeModal('modal-add-fuel')">✕</button></div>
@@ -4356,6 +4377,36 @@ var FG_WA = {
         lines.push('');
       }
       lines.push('Please arrive on time with all your documents. All the best! 🍀');
+    } else if (type === 'dl_rescheduled') {
+      // 🔄 DL TEST RESCHEDULED message (after a Fail / Absent result)
+      var rDate = (student && student.date) || '';
+      var rTime = (student && student.time) || '';
+      var rRto = (student && student.rto) || '';
+      var prevRes = (student && student.previousResult) || '';
+      var prevDate = (student && student.previousDate) || '';
+      var rPlace = (student && (student.contactPlace || student.dlContactPlace || '')) || '';
+      var rPerson = (student && (student.contactPerson || student.dlContactPerson || '')) || '';
+      var rPhone = (student && (student.contactPhone || student.dlContactPhone || '')) || '';
+      lines.push('🔄 *DL Test Rescheduled — ' + school + '*');
+      lines.push('');
+      lines.push('Hi ' + name + ',');
+      if (prevRes === 'Absent') lines.push('Since you could not attend the earlier DL test' + (prevDate ? ' (' + prevDate + ')' : '') + ', we have booked a *new test slot* for you. 👍');
+      else if (prevRes === 'Failed') lines.push("Don't worry about the last attempt" + (prevDate ? ' (' + prevDate + ')' : '') + ' — a *new DL test slot* has been booked for you. You can do it! 💪');
+      else lines.push('Your Driving Licence test has been *rescheduled*. 🚗');
+      lines.push('');
+      lines.push('📋 *New DL Slot Details:*');
+      if (rDate) lines.push('• Test Date: ' + rDate);
+      if (rTime) lines.push('• Test Time: ' + rTime);
+      if (rRto) lines.push('• RTO / Location: ' + rRto);
+      lines.push('');
+      if (rPlace || rPerson || rPhone) {
+        lines.push('📞 *Test Contact:*');
+        if (rPlace) lines.push('• Place: ' + rPlace);
+        if (rPerson) lines.push('• Person: ' + rPerson);
+        if (rPhone) lines.push('• Number: ' + rPhone);
+        lines.push('');
+      }
+      lines.push('Please arrive on time with all your documents. All the best! 🍀');
     } else if (type === 'dl_contact_share') {
       // 📞 DL test booking note sent to the CONTACT PERSON
       var cPerson2 = (student && (student.contactPerson || '')) || 'Contact';
@@ -4443,7 +4494,8 @@ var FG_WA = {
     } catch(e){ console.warn('FG_WA.send failed:', e.message); }
   },
   // Send DL test booking details (from a dlTests record) to the student's phone
-  sendDLBooking: function (test) {
+  // Optional `type` lets callers switch the template (e.g. 'dl_rescheduled')
+  sendDLBooking: function (test, type) {
     try {
       if (!FG_WA.enabled()) return;
       if (!test) { FG_WA.closeBlank(); return; }
@@ -4454,9 +4506,9 @@ var FG_WA = {
         showToast('⚠ WhatsApp skipped — no valid student phone for ' + (test.studentName || test.name || 'student'));
         return;
       }
-      var text = FG_WA.buildMessage('dl_slot_booked', Object.assign({}, test, { name: test.studentName || test.name || test.student || 'student' }));
+      var text = FG_WA.buildMessage(type || 'dl_slot_booked', Object.assign({}, test, { name: test.studentName || test.name || test.student || 'student' }));
       var opened = FG_WA.openWa(num, text);
-      if (opened) showToast('💬 Opening WhatsApp (DL booking) for ' + (test.studentName || test.name || 'student') + '...');
+      if (opened) showToast('💬 Opening WhatsApp (' + (type === 'dl_rescheduled' ? 'DL reschedule' : 'DL booking') + ') for ' + (test.studentName || test.name || 'student') + '...');
     } catch(e){ console.warn('FG_WA.sendDLBooking failed:', e.message); }
   },
   // ---- Fallback panel when window.open is blocked ----
@@ -13984,7 +14036,7 @@ function renderDLSection() {
             return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">' +
               '<div>' +
                 '<div style="font-weight:500;">' + (s.name || 'Unknown') + '</div>' +
-                '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + (s.dlNumber ? 'DL No: ' + s.dlNumber + ' | ' : '') + slotLabel + '</div>' +
+                '<div style="font-size:12px;color:var(--text2);margin-top:2px;">' + (s.dlNumber ? 'DL App No: ' + s.dlNumber + ' | ' : '') + slotLabel + '</div>' +
               '</div>' +
               '<div style="display:flex;align-items:center;gap:8px;"><span class="badge ' + slotCls + '">' + (s.dlDeliveredDate ? '&#x2705; Delivered' : (s.dlSlotBookedDate ? '&#x1F4C5; Slot Booked' : 'Pending')) + '</span>' +
                 '<button class="btn btn-outline btn-sm" onclick="openDLSectionStudent(\'' + sid.replace(/'/g, "\\'") + '\')">Open</button>' +
@@ -14008,12 +14060,13 @@ function openDLSectionStudent(sid) {
 function _dlBookingCardHTML(t) {
   const tid = String(t.firebaseId || t.id || '');
   const tidSafe = tid.replace(/'/g, "\\'");
-  const statusCls = t.status === 'Passed' ? 'badge-green' : t.status === 'Failed' ? 'badge-red' : 'badge-amber';
+  const statusCls = t.status === 'Passed' ? 'badge-green' : t.status === 'Failed' ? 'badge-red' : t.status === 'Absent' ? 'badge-gray' : 'badge-amber';
+  const statusLabel = t.status === 'Passed' ? '&#x2705; Passed' : t.status === 'Failed' ? '&#x274C; Failed' : t.status === 'Absent' ? '&#x1F6AB; Absent' : (t.status || 'Scheduled');
   const studentName = t.studentName || t.student || 'Unknown';
   return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff;">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<div style="font-weight:600;font-size:13px;">' + studentName + '</div>' +
-      '<span class="badge ' + statusCls + '">' + (t.status || 'Scheduled') + '</span>' +
+      '<span class="badge ' + statusCls + '">' + statusLabel + '</span>' +
     '</div>' +
     '<div style="font-size:12px;color:var(--text2);margin-top:2px;">&#x1F4C5; ' + (t.date || '—') + (t.time ? ' &#x23F0; ' + t.time : '') + (t.rto ? ' &#x1F3DB; ' + t.rto : '') + '</div>' +
     ((t.contactPlace || t.contactPerson || t.contactPhone) ? '<div style="margin-top:6px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:6px 8px;font-size:12px;">' +
@@ -14025,8 +14078,10 @@ function _dlBookingCardHTML(t) {
     '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">' +
       '<button class="btn btn-accent btn-sm" onclick="shareDLTestWhatsApp(\'' + tidSafe + '\')" title="Re-send the booking details on WhatsApp">&#x1F4F1; WhatsApp</button>' +
       '<button class="btn btn-outline btn-sm" onclick="deleteDLTest(\'' + tidSafe + '\')" title="Delete this booking permanently">&#x1F5D1; Delete</button>' +
-      (t.status === 'Scheduled' ? '<button class="btn btn-success btn-sm" onclick="markDLTestResult(\'' + tidSafe + '\',\'Passed\')">&#x2705; Passed</button>' : '') +
-      (t.status === 'Scheduled' ? '<button class="btn btn-danger btn-sm" onclick="markDLTestResult(\'' + tidSafe + '\',\'Failed\')">&#x274C; Failed</button>' : '') +
+      (t.status === 'Scheduled' ? '<button class="btn btn-success btn-sm" onclick="markDLTestResult(\'' + tidSafe + '\',\'Passed\')">&#x2705; Pass</button>' : '') +
+      (t.status === 'Scheduled' ? '<button class="btn btn-danger btn-sm" onclick="markDLTestResult(\'' + tidSafe + '\',\'Failed\')">&#x274C; Fail</button>' : '') +
+      (t.status === 'Scheduled' ? '<button class="btn btn-outline btn-sm" onclick="markDLTestResult(\'' + tidSafe + '\',\'Absent\')">&#x1F6AB; Absent</button>' : '') +
+      ((t.status === 'Failed' || t.status === 'Absent') ? '<button class="btn btn-accent btn-sm" onclick="openRescheduleDLModal(\'' + tidSafe + '\')" title="Book a new slot — the student gets the new details on WhatsApp">&#x1F504; Reschedule</button>' : '') +
     '</div>' +
   '</div>';
 }
@@ -14081,7 +14136,32 @@ function renderDLStudentDetail(s) {
   if (s.dlDeliveredDate) {
     statusHTML = '<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;">&#x1F389; DL delivered on ' + s.dlDeliveredDate + ' — licence process complete!</div>';
   } else if (s.dlSlotBookedDate) {
-    statusHTML = '<div style="background:#eff6ff;border:1px solid #bfdbfe;color:var(--primary);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;">&#x1F4C5; DL test slot booked for <strong>' + s.dlSlotBookedDate + '</strong>. Enter the <strong>DL Delivered Date</strong> once the licence is handed over.</div>';
+    // 📝 DL TEST RESULT on the student record — Pass / Fail / Absent (+ Reschedule)
+    const dlRes = s.dlTestResult || '';
+    const sidSafe2 = sid.replace(/'/g, "\\'");
+    if (dlRes === 'Passed') {
+      statusHTML = '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;">' +
+        '<div style="color:#15803d;font-weight:700;font-size:14px;">&#x2705; DL Test PASSED' + (s.dlTestResultDate ? ' — marked on ' + s.dlTestResultDate : '') + ' &#x1F389;</div>' +
+        '<div style="color:#166534;font-size:12px;margin-top:4px;">Test slot was ' + s.dlSlotBookedDate + (s.dlSlotTime ? ' at ' + s.dlSlotTime : '') + '. Enter the <strong>DL Delivered Date</strong> once the licence is handed over.</div>' +
+      '</div>';
+    } else if (dlRes === 'Failed' || dlRes === 'Absent') {
+      const isFail = dlRes === 'Failed';
+      statusHTML = '<div style="background:' + (isFail ? '#fef2f2' : '#f8fafc') + ';border:1px solid ' + (isFail ? '#fecaca' : '#e2e8f0') + ';border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;">' +
+        '<div style="color:' + (isFail ? '#b91c1c' : '#475569') + ';font-weight:700;margin-bottom:4px;">' + (isFail ? '&#x274C; DL Test FAILED' : '&#x1F6AB; ABSENT for the DL Test') + (s.dlTestResultDate ? ' — marked on ' + s.dlTestResultDate : '') + '</div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Test slot was ' + s.dlSlotBookedDate + (s.dlSlotTime ? ' at ' + s.dlSlotTime : '') + '. Book a new slot — the student gets the new details on WhatsApp.</div>' +
+        '<button class="btn btn-accent btn-sm" onclick="openRescheduleDLStudent(\'' + sidSafe2 + '\')">&#x1F504; Reschedule DL Test</button>' +
+      '</div>';
+    } else {
+      statusHTML = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;">' +
+        '<div style="color:var(--primary);margin-bottom:10px;">&#x1F4C5; DL test slot booked for <strong>' + s.dlSlotBookedDate + '</strong>' + (s.dlSlotTime ? ' at <strong>' + s.dlSlotTime + '</strong>' : '') + '. After the test, select the result below.</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;">&#x1F4DD; Test Result:</span>' +
+          '<button class="btn btn-success btn-sm" onclick="markDLSectionTestResult(\'' + sidSafe2 + '\',\'Passed\')">&#x2705; Pass</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="markDLSectionTestResult(\'' + sidSafe2 + '\',\'Failed\')">&#x274C; Fail</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="markDLSectionTestResult(\'' + sidSafe2 + '\',\'Absent\')">&#x1F6AB; Absent</button>' +
+        '</div>' +
+      '</div>';
+    }
   } else {
     statusHTML = '<div style="background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;">No DL slot booked yet. Select the <strong>DL Slot Booked Date</strong> when the RTO slot is confirmed.</div>';
   }
@@ -14116,7 +14196,7 @@ function renderDLStudentDetail(s) {
     statusHTML +
     contactBoxHTML +
     '<div class="form-grid">' +
-      '<div class="form-group"><label>DL Number</label><input type="text" id="dl-number-' + sid + '" value="' + (s.dlNumber || '') + '" placeholder="e.g. KA01 20260005678"></div>' +
+      '<div class="form-group"><label>DL Application Number</label><input type="text" id="dl-number-' + sid + '" value="' + (s.dlNumber || '') + '" placeholder="e.g. 1234567890123 (DL application no.)"></div>' +
       '<div class="form-group"><label>DL Slot Booked Date</label><input type="date" id="dl-slot-date-' + sid + '" value="' + (s.dlSlotBookedDate || '') + '"></div>' +
       '<div class="form-group"><label>DL Slot Time (optional)</label><input type="time" id="dl-slot-time-' + sid + '" value="' + (s.dlSlotTime || '') + '"></div>' +
       '<div class="form-group"><label>DL Delivered Date</label><input type="date" id="dl-delivered-date-' + sid + '" value="' + (s.dlDeliveredDate || '') + '"></div>' +
@@ -14170,6 +14250,7 @@ async function saveDLSectionInfo() {
 
   const updates = {
     dlNumber: newDLNum,
+    dlAppNumber: newDLNum,   // DL APPLICATION number (same field — labelled as application no.)
     dlSlotBookedDate: newSlot,
     dlSlotTime: newTime,
     dlDeliveredDate: newDelivered,
@@ -14309,14 +14390,15 @@ function renderDLTests() {
         '</div>';
     } else {
       list.innerHTML = schoolTests.map(function(t) {
-        const statusCls = t.status === 'Passed' ? 'badge-green' : t.status === 'Failed' ? 'badge-red' : 'badge-amber';
+        const statusCls = t.status === 'Passed' ? 'badge-green' : t.status === 'Failed' ? 'badge-red' : t.status === 'Absent' ? 'badge-gray' : 'badge-amber';
+        const statusLabel = t.status === 'Passed' ? '&#x2705; Passed' : t.status === 'Failed' ? '&#x274C; Failed' : t.status === 'Absent' ? '&#x1F6AB; Absent' : (t.status || 'Scheduled');
         const tid = t.firebaseId || t.id || '';
         const studentName = t.studentName || t.student || 'Unknown';
         const stu = (data.students || []).find(function(s){ return s.name === studentName; });
         return '<div class="dl-card" style="position:relative;">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">' +
             '<h4 style="margin:0;font-size:15px;">&#x1FAAA; ' + studentName + '</h4>' +
-            '<span class="badge ' + statusCls + '">' + (t.status || 'Scheduled') + '</span>' +
+            '<span class="badge ' + statusCls + '">' + statusLabel + '</span>' +
           '</div>' +
           (stu ? '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">&#x1F4DE; ' + (stu.phone||'') + ' &nbsp;&#x1F697; ' + (stu.vehicle||'') + ' &nbsp;&#x1F4DA; ' + (stu.classes||0) + '/' + (stu.totalClasses||27) + ' classes</div>' : '') +
           '<div class="dl-row"><span>&#x1F4C5; Test Date</span><span style="font-weight:600;">' + (t.date || '—') + '</span></div>' +
@@ -14332,8 +14414,10 @@ function renderDLTests() {
           '</div>' : '') +
           (t.notes ? '<div class="dl-row"><span>&#x1F4DD; Notes</span><span style="color:var(--text2);">' + t.notes + '</span></div>' : '') +
           '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">' +
-            (t.status === 'Scheduled' ? '<button class="btn btn-success btn-sm" onclick="markDLTestResult(\'' + tid + '\',\'Passed\')">&#x2705; Passed</button>' : '') +
-            (t.status === 'Scheduled' ? '<button class="btn btn-danger btn-sm" onclick="markDLTestResult(\'' + tid + '\',\'Failed\')">&#x274C; Failed</button>' : '') +
+            (t.status === 'Scheduled' ? '<button class="btn btn-success btn-sm" onclick="markDLTestResult(\'' + tid + '\',\'Passed\')">&#x2705; Pass</button>' : '') +
+            (t.status === 'Scheduled' ? '<button class="btn btn-danger btn-sm" onclick="markDLTestResult(\'' + tid + '\',\'Failed\')">&#x274C; Fail</button>' : '') +
+            (t.status === 'Scheduled' ? '<button class="btn btn-outline btn-sm" onclick="markDLTestResult(\'' + tid + '\',\'Absent\')">&#x1F6AB; Absent</button>' : '') +
+            ((t.status === 'Failed' || t.status === 'Absent') ? '<button class="btn btn-accent btn-sm" onclick="openRescheduleDLModal(\'' + tid + '\')" title="Book a new slot — the student gets the new details on WhatsApp">&#x1F504; Reschedule</button>' : '') +
           '</div>' +
           '<div style="font-size:11px;color:var(--text3);margin-top:8px;">&#x1F4F1; Delete &amp; WhatsApp re-share options are available in the <strong>DL Section</strong> page.</div>' +
         '</div>';
@@ -14512,10 +14596,25 @@ async function markDLTestResult(testId, result) {
   if (test) {
     test.status = result;
     test.resultDate = new Date().toISOString().split('T')[0];
-    if (result === 'Passed') {
-      // Update the student status to reflect DL obtained
-      const stu = (data.students || []).find(function(s){ return s.name === (test.studentName||test.student); });
-      if (stu) stu.dlObtained = true;
+    // Keep the student's DL Section card in sync (Pass / Fail / Absent shown there too)
+    const stu = (data.students || []).find(function(s){
+      return (test.studentId && String(s.firebaseId || s.id || '') === String(test.studentId)) || s.name === (test.studentName || test.student);
+    });
+    if (stu) {
+      stu.dlTestResult = result;
+      stu.dlTestResultDate = test.resultDate;
+      if (result === 'Passed') stu.dlObtained = true;
+      if (typeof db !== 'undefined' && currentSchoolId && (stu.firebaseId || stu.id)) {
+        try {
+          DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/students', String(stu.firebaseId || stu.id), {
+            dlTestResult: result,
+            dlTestResultDate: test.resultDate,
+            dlObtained: result === 'Passed' ? true : (stu.dlObtained || false)
+          }).catch(function(){});
+          FGCache.invalidate(currentSchoolId, 'students');
+          EnhancedCache.del(currentSchoolId, 'students').catch(function(){});
+        } catch(e){}
+      }
     }
   }
   if (typeof db !== 'undefined' && currentSchoolId && testId && !testId.startsWith('local-')) {
@@ -14533,8 +14632,250 @@ async function markDLTestResult(testId, result) {
   renderDLTests();
   // Also refresh the DL Section page (bookings status badges)
   try { if (typeof renderDLSection === 'function') renderDLSection(); } catch(e){}
-  addNotification('&#x1FAAA; ' + (test ? (test.studentName||test.student) : 'Student') + ' ' + result + ' DL Test!', result === 'Passed' ? 'success' : 'warning');
-  showToast((result === 'Passed' ? '✅' : '❌') + ' DL Test marked as ' + result);
+  const _resName = test ? (test.studentName || test.student || 'Student') : 'Student';
+  if (result === 'Passed') {
+    addNotification('&#x1FAAA; ' + _resName + ' Passed the DL Test! 🎉', 'success');
+    showToast('✅ DL Test marked as Passed');
+  } else {
+    addNotification('&#x1FAAA; ' + _resName + ' — DL Test marked ' + result + '. You can reschedule a new slot.', 'warning');
+    showToast((result === 'Failed' ? '❌' : '🚫') + ' DL Test marked as ' + result);
+    // ⏩ Offer to reschedule right away (Fail / Absent)
+    setTimeout(function(){
+      try {
+        if (confirm(_resName + "'s DL test is marked " + result + '.\n\nDo you want to RESCHEDULE the test now?\n(The new slot details will also be sent on WhatsApp)')) {
+          openRescheduleDLModal(testId);
+        }
+      } catch(e){}
+    }, 250);
+  }
+}
+
+// ---- 📝 DL SECTION (Licence Management): test result on the STUDENT record ----
+async function markDLSectionTestResult(sid, result) {
+  const s = (data.students || []).find(function(x){ return String(x.firebaseId || x.id || '') === String(sid); });
+  if (!s) { showToast('⚠ Student not found'); return; }
+  if (!confirm('Mark ' + (s.name || 'this student') + "'s DL test as " + result + '?')) return;
+  const updates = {
+    dlTestResult: result,
+    dlTestResultDate: new Date().toISOString().split('T')[0]
+  };
+  if (result === 'Passed') updates.dlObtained = true;
+  Object.assign(s, updates);
+
+  // Keep any matching Scheduled dlTests booking of this student in sync
+  try {
+    (_dlTestsForStudent(s) || []).forEach(function(t){
+      if (t.status === 'Scheduled') {
+        t.status = result;
+        t.resultDate = updates.dlTestResultDate;
+        const tid = String(t.firebaseId || t.id || '');
+        if (typeof db !== 'undefined' && currentSchoolId && tid && !tid.startsWith('local-') && !tid.startsWith('sync-') && !tid.startsWith('queue-')) {
+          DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/dlTests', tid, { status: result, resultDate: updates.dlTestResultDate }).catch(function(){});
+        }
+      }
+    });
+    if (currentSchoolId) { FGCache.invalidate(currentSchoolId, 'dlTests'); EnhancedCache.del(currentSchoolId, 'dlTests').catch(function(){}); }
+  } catch(e){}
+
+  if (typeof db !== 'undefined' && currentSchoolId) {
+    try {
+      await DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/students', String(sid), updates);
+      FGCache.invalidate(currentSchoolId, 'students');
+      EnhancedCache.del(currentSchoolId, 'students').catch(e => {});
+    } catch(e) { console.warn('DL test result save failed:', e.message); }
+  }
+  renderDLStudentDetail(s);
+  try { renderDLSection(); } catch(e){}
+  try { renderDLTests(); } catch(e){}
+  if (result === 'Passed') {
+    addNotification('&#x1FAAA; ' + (s.name || 'Student') + ' Passed the DL Test! 🎉', 'success');
+    showToast('✅ DL Test marked as Passed');
+  } else {
+    addNotification('&#x1FAAA; ' + (s.name || 'Student') + ' — DL Test marked ' + result + '. You can reschedule a new slot.', 'warning');
+    showToast((result === 'Failed' ? '❌' : '🚫') + ' DL Test marked as ' + result);
+    // ⏩ Offer to reschedule right away (Fail / Absent)
+    setTimeout(function(){
+      try {
+        if (confirm((s.name || 'Student') + "'s DL test is marked " + result + '.\n\nDo you want to RESCHEDULE the test now?\n(The new slot details will also be sent on WhatsApp)')) {
+          openRescheduleDLStudent(sid);
+        }
+      } catch(e){}
+    }, 250);
+  }
+}
+
+// Open the reschedule dialog for the STUDENT record (DL Section flow)
+function openRescheduleDLStudent(sid) {
+  const s = (data.students || []).find(function(x){ return String(x.firebaseId || x.id || '') === String(sid); });
+  if (!s) { showToast('⚠ Student not found'); return; }
+  window.__fgRescheduleMode = 'student';
+  window.__fgRescheduleStudentId = String(sid);
+  window.__fgRescheduleTestId = '';
+  const info = document.getElementById('redl-info');
+  if (info) {
+    info.innerHTML = '&#x1F464; <strong>' + (s.name || 'Student') + '</strong> — previous slot on <strong>' + (s.dlSlotBookedDate || '—') + '</strong>' +
+      (s.dlSlotTime ? ' at ' + s.dlSlotTime : '') + ' was marked <strong>' + (s.dlTestResult || '—') + '</strong>.<br>Pick a new slot below — the student will receive the new details on WhatsApp.';
+  }
+  const d = document.getElementById('redl-date');
+  if (d) { const nextWeek = new Date(Date.now() + 7 * 86400000); d.value = nextWeek.toISOString().split('T')[0]; }
+  const tm = document.getElementById('redl-time'); if (tm) tm.value = s.dlSlotTime || '09:00';
+  const r = document.getElementById('redl-rto'); if (r) r.value = '';
+  const n = document.getElementById('redl-notes'); if (n) n.value = '';
+  openModal('modal-reschedule-dl');
+}
+
+// ---- 🔄 Reschedule a Failed / Absent DL test (new slot + WhatsApp) ----
+function openRescheduleDLModal(testId) {
+  const test = (data.dlTests || []).find(function(t){ return String(t.firebaseId || t.id) === String(testId); });
+  if (!test) { showToast('⚠ Test not found'); return; }
+  window.__fgRescheduleMode = 'test';
+  window.__fgRescheduleStudentId = '';
+  window.__fgRescheduleTestId = String(testId);
+  const info = document.getElementById('redl-info');
+  if (info) {
+    info.innerHTML = '&#x1F464; <strong>' + (test.studentName || test.student || 'Student') + '</strong> — previous test on <strong>' +
+      (test.date || '—') + '</strong>' + (test.time ? ' at ' + test.time : '') +
+      ' was marked <strong>' + (test.status || '—') + '</strong>.<br>Pick a new slot below — the student will receive the new details on WhatsApp.';
+  }
+  const d = document.getElementById('redl-date');
+  if (d) { const nextWeek = new Date(Date.now() + 7 * 86400000); d.value = nextWeek.toISOString().split('T')[0]; }
+  const tm = document.getElementById('redl-time'); if (tm) tm.value = test.time || '09:00';
+  const r = document.getElementById('redl-rto'); if (r) r.value = test.rto || '';
+  const n = document.getElementById('redl-notes'); if (n) n.value = '';
+  openModal('modal-reschedule-dl');
+}
+
+async function saveRescheduleDLTest() {
+  // 💬 WhatsApp: pre-open the popup NOW (inside the click) so it appears instantly
+  try { FG_WA.prepare(); } catch(e){}
+  // 👤 DL Section flow — reschedule straight on the STUDENT record
+  if (window.__fgRescheduleMode === 'student') { return _saveRescheduleDLStudent(); }
+  const testId = String(window.__fgRescheduleTestId || '');
+  const test = (data.dlTests || []).find(function(t){ return String(t.firebaseId || t.id) === testId; });
+  if (!test) { try { FG_WA.closeBlank(); } catch(e){} showToast('⚠ Test not found'); return; }
+  const date = document.getElementById('redl-date') ? document.getElementById('redl-date').value : '';
+  const time = document.getElementById('redl-time') ? (document.getElementById('redl-time').value || '09:00') : '09:00';
+  const rto = document.getElementById('redl-rto') ? document.getElementById('redl-rto').value.trim() : '';
+  const notes = document.getElementById('redl-notes') ? document.getElementById('redl-notes').value.trim() : '';
+  if (!date) { try { FG_WA.closeBlank(); } catch(e){} alert('Please select the new test date'); return; }
+  if (!rto) { try { FG_WA.closeBlank(); } catch(e){} alert('Please enter the RTO office / location'); return; }
+
+  const updates = {
+    date: date,
+    time: time,
+    rto: rto,
+    notes: notes || test.notes || '',
+    status: 'Scheduled',
+    resultDate: '',
+    previousResult: test.status || '',
+    previousDate: test.date || '',
+    rescheduledAt: new Date().toISOString(),
+    rescheduleCount: (test.rescheduleCount || 0) + 1
+  };
+  Object.assign(test, updates);
+
+  // Keep the student's DL slot date/time in sync (DL Section status card)
+  // and clear any previous Fail/Absent result so the new test shows as scheduled
+  const stu = (data.students || []).find(function(s){
+    return (test.studentId && String(s.firebaseId || s.id || '') === String(test.studentId)) || s.name === (test.studentName || test.student);
+  });
+  if (stu) { stu.dlSlotBookedDate = date; stu.dlSlotTime = time; stu.dlTestResult = ''; stu.dlTestResultDate = ''; }
+
+  // 💬 WhatsApp: send the RESCHEDULED slot details to the student instantly
+  try {
+    FG_WA.sendDLBooking(Object.assign({}, test, { phone: test.studentPhone || (stu ? stu.phone : '') || '' }), 'dl_rescheduled');
+  } catch(e){ console.warn('WhatsApp DL reschedule message failed:', e.message); }
+
+  // Save to Firebase
+  if (typeof db !== 'undefined' && currentSchoolId && testId && !testId.startsWith('local-') && !testId.startsWith('sync-') && !testId.startsWith('queue-')) {
+    try {
+      await DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/dlTests', testId, updates);
+      FGCache.invalidate(currentSchoolId, 'dlTests');
+      EnhancedCache.del(currentSchoolId, 'dlTests').catch(e => {});
+    } catch(e) { console.error('DL reschedule save failed:', e.message); }
+  }
+  if (typeof db !== 'undefined' && currentSchoolId && stu && (stu.firebaseId || stu.id)) {
+    try {
+      await DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/students', String(stu.firebaseId || stu.id), { dlSlotBookedDate: date, dlSlotTime: time, dlTestResult: '', dlTestResultDate: '' });
+      FGCache.invalidate(currentSchoolId, 'students');
+      EnhancedCache.del(currentSchoolId, 'students').catch(e => {});
+    } catch(e) { console.warn('Student slot sync failed:', e.message); }
+  }
+
+  closeModal('modal-reschedule-dl');
+  renderDLTests();
+  try { if (typeof renderDLSection === 'function') renderDLSection(); } catch(e){}
+  addNotification('&#x1F504; DL Test rescheduled for ' + (test.studentName || test.student || 'Student') + ' → ' + date + (time ? ' ' + time : '') + ' at ' + rto, 'info');
+  showToast('🔄 DL Test rescheduled to ' + date + ' — WhatsApp sent');
+}
+
+// 👤 Save a reschedule made from the DL SECTION student card (Fail / Absent → new slot)
+async function _saveRescheduleDLStudent() {
+  const sid = String(window.__fgRescheduleStudentId || '');
+  const s = (data.students || []).find(function(x){ return String(x.firebaseId || x.id || '') === sid; });
+  if (!s) { try { FG_WA.closeBlank(); } catch(e){} showToast('⚠ Student not found'); return; }
+  const date = document.getElementById('redl-date') ? document.getElementById('redl-date').value : '';
+  const time = document.getElementById('redl-time') ? (document.getElementById('redl-time').value || '09:00') : '09:00';
+  const rto = document.getElementById('redl-rto') ? document.getElementById('redl-rto').value.trim() : '';
+  if (!date) { try { FG_WA.closeBlank(); } catch(e){} alert('Please select the new test date'); return; }
+
+  const prevResult = s.dlTestResult || '';
+  const prevDate = s.dlSlotBookedDate || '';
+  const updates = {
+    dlSlotBookedDate: date,
+    dlSlotTime: time,
+    dlTestResult: '',
+    dlTestResultDate: '',
+    dlPrevResult: prevResult,
+    dlPrevSlotDate: prevDate,
+    dlLastRescheduledAt: new Date().toISOString(),
+    dlRescheduleCount: (s.dlRescheduleCount || 0) + 1
+  };
+  Object.assign(s, updates);
+
+  // Also bring any Failed/Absent dlTests booking of this student back to Scheduled with the new slot
+  try {
+    (_dlTestsForStudent(s) || []).forEach(function(t){
+      if (t.status === 'Failed' || t.status === 'Absent') {
+        const tUpd = { date: date, time: time, rto: rto || t.rto || '', status: 'Scheduled', resultDate: '', previousResult: t.status, previousDate: t.date, rescheduledAt: new Date().toISOString(), rescheduleCount: (t.rescheduleCount || 0) + 1 };
+        Object.assign(t, tUpd);
+        const tid = String(t.firebaseId || t.id || '');
+        if (typeof db !== 'undefined' && currentSchoolId && tid && !tid.startsWith('local-') && !tid.startsWith('sync-') && !tid.startsWith('queue-')) {
+          DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/dlTests', tid, tUpd).catch(function(){});
+        }
+      }
+    });
+    if (currentSchoolId) { FGCache.invalidate(currentSchoolId, 'dlTests'); EnhancedCache.del(currentSchoolId, 'dlTests').catch(function(){}); }
+  } catch(e){}
+
+  // 💬 WhatsApp: send the RESCHEDULED slot details to the student instantly
+  try {
+    FG_WA.sendDLBooking({
+      name: s.name || 'Student', studentName: s.name || 'Student',
+      phone: s.phone || '', studentPhone: s.phone || '',
+      date: date, time: time, rto: rto,
+      previousResult: prevResult, previousDate: prevDate,
+      contactPlace: s.dlContactPlace || '', contactPerson: s.dlContactPerson || '', contactPhone: s.dlContactPhone || ''
+    }, 'dl_rescheduled');
+  } catch(e){ console.warn('WhatsApp DL reschedule message failed:', e.message); }
+
+  // Save the student record to Firebase
+  if (typeof db !== 'undefined' && currentSchoolId && sid) {
+    try {
+      await DataWriter.queueWrite('update', 'schools/' + currentSchoolId + '/students', sid, updates);
+      FGCache.invalidate(currentSchoolId, 'students');
+      EnhancedCache.del(currentSchoolId, 'students').catch(e => {});
+    } catch(e) { console.warn('DL reschedule save failed:', e.message); }
+  }
+
+  window.__fgRescheduleMode = '';
+  window.__fgRescheduleStudentId = '';
+  closeModal('modal-reschedule-dl');
+  renderDLStudentDetail(s);
+  try { renderDLSection(); } catch(e){}
+  try { renderDLTests(); } catch(e){}
+  addNotification('&#x1F504; DL Test rescheduled for ' + (s.name || 'Student') + ' → ' + date + (time ? ' ' + time : '') + (rto ? ' at ' + rto : ''), 'info');
+  showToast('🔄 DL Test rescheduled to ' + date + ' — WhatsApp sent');
 }
 
 async function cancelDLTest(testId) {
@@ -18441,7 +18782,7 @@ function openLicenceDeleteDialog(sid, kind) {
     student.llApprovedDate ? 'Approved: ' + student.llApprovedDate : ''
   ].filter(Boolean).join(' &nbsp;|&nbsp; ') || '—';
   const dlInfo = [
-    student.dlNumber ? 'DL No: ' + student.dlNumber : '',
+    student.dlNumber ? 'DL App No: ' + student.dlNumber : '',
     student.dlSlotBookedDate ? 'Slot: ' + student.dlSlotBookedDate : '',
     student.dlDeliveredDate ? 'Delivered: ' + student.dlDeliveredDate : ''
   ].filter(Boolean).join(' &nbsp;|&nbsp; ') || '—';
@@ -25419,5 +25760,5 @@ function populateFormFromStudentId(value) {
   <div id="fg-wa-panel-list" style="max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:8px;"></div>
 </div>
 
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40aeeb0bc6d7ef9',t:'MTc5MDM0ODc4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2deb4d769e2e730',t:'MTc4NzIwMDY4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a300c7c51e00c87a',t:'MTc4NzU1Nzk3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a36228199d4a3e57',t:'MTc4ODU3OTA0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a37b9ade4a111967',t:'MTc4ODg0NTg4NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4086b5d0e7e2e35',t:'MTc5MDMyMjQzMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a40aeeb0bc6d7ef9',t:'MTc5MDM0ODc4Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4407abc5fbe384f',t:'MTc5MDkxMDI2Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
